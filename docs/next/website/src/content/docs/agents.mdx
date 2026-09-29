@@ -35,8 +35,11 @@ Automatic detection works out of the box for common coding agents. The table sho
 | Kiro CLI | screen manifest | none |
 | Maki | screen manifest | none |
 | Muse | screen manifest | none |
+| Keen Code | screen manifest | none |
 
 Detected but less thoroughly tested: Gemini CLI and Cline. Unsupported agents still run normally as terminal processes. They just may not get rich state unless you add an integration or report state over the socket API.
+
+Keen Code uses the stock `keen` executable: `herdr agent start reviewer --kind keen --pane <pane_id>`. Its screen manifest recognizes the idle prompt, active response, permission requests, and `ask_user` questions (including typed answers). No hook installation or native session restore is provided.
 
 ## Status authority
 

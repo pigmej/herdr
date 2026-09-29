@@ -42,6 +42,7 @@ pub struct AgentDetection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
     Pi,
+    Keen,
     Claude,
     Codex,
     Gemini,
@@ -68,8 +69,9 @@ pub enum Agent {
 }
 
 impl Agent {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::Pi,
+        Self::Keen,
         Self::Claude,
         Self::Codex,
         Self::Gemini,
@@ -95,8 +97,9 @@ impl Agent {
         Self::Muse,
     ];
 
-    pub const SCREEN_MANIFEST_AGENTS: [Self; 22] = [
+    pub const SCREEN_MANIFEST_AGENTS: [Self; 23] = [
         Self::Pi,
+        Self::Keen,
         Self::Claude,
         Self::Codex,
         Self::Gemini,
@@ -124,6 +127,7 @@ impl Agent {
 pub fn agent_label(agent: Agent) -> &'static str {
     match agent {
         Agent::Pi => "pi",
+        Agent::Keen => "keen",
         Agent::Claude => "claude",
         Agent::Codex => "codex",
         Agent::Gemini => "gemini",
@@ -153,6 +157,7 @@ pub fn agent_label(agent: Agent) -> &'static str {
 pub fn interactive_agent_executable(agent: Agent) -> &'static str {
     match agent {
         Agent::Pi => "pi",
+        Agent::Keen => "keen",
         Agent::Claude => "claude",
         Agent::Codex => "codex",
         Agent::Gemini => "gemini",
@@ -199,6 +204,7 @@ fn lookup_agent(name: &str) -> Option<Agent> {
     let name = path_basename(name);
     match name {
         "pi" => Some(Agent::Pi),
+        "keen" => Some(Agent::Keen),
         "claude" | "claude-code" => Some(Agent::Claude),
         "codex" => Some(Agent::Codex),
         "gemini" => Some(Agent::Gemini),
@@ -901,11 +907,103 @@ mod tests {
         assert!(detection.visible_working);
     }
 
+    #[test]
+    fn keen_live_controls_require_combined_evidence() {
+        let footer = "\n─────────────────\n ▶ What are we building?\n─────────────────\n  provider/model • /project\n  N/A •  build";
+        let busy = footer.replace("N/A •", "N/A • ⏱ 0:01 •");
+        for (controls, tail, expected) in [
+            ("", footer, AgentState::Idle),
+            (" ⠹ rotating tip", busy.as_str(), AgentState::Working),
+            (
+                "▶ Allow\nDeny\nAsk what to do instead\n[↑/↓ navigate  Enter confirm  Esc deny]",
+                busy.as_str(),
+                AgentState::Blocked,
+            ),
+            (
+                "Question 1 of 1\n↑/↓ navigate · Enter select · Esc cancel\n─────────────────",
+                busy.as_str(),
+                AgentState::Blocked,
+            ),
+            (
+                "Question 1 of 1\nEnter submit · Esc cancel\n─────────────────",
+                busy.as_str(),
+                AgentState::Blocked,
+            ),
+        ] {
+            let detection = detect_agent(Some(Agent::Keen), &format!("{controls}{tail}"));
+            assert_eq!(detection.state, expected, "{controls}");
+            assert_eq!(detection.visible_blocker, expected == AgentState::Blocked);
+            assert_eq!(detection.visible_working, expected == AgentState::Working);
+            assert_eq!(detection.visible_idle, expected == AgentState::Idle);
+        }
+        // User input and cwd text are not the status bar's elapsed-time control.
+        for incidental in ["⏱", "⏱ 0:42 •", "N/A • ⏱ 0:42 • build"] {
+            for screen in [
+                footer.replace("/project", &format!("/project/{incidental}")),
+                footer.replace("What are we building?", incidental),
+            ] {
+                let detection = detect_agent(Some(Agent::Keen), &screen);
+                assert_eq!(detection.state, AgentState::Idle, "{screen}");
+                assert!(detection.visible_idle);
+                assert!(!detection.visible_working);
+            }
+        }
+        for prose in [
+            "Allow Dangerous Command?",
+            "Question 1 of 1",
+            "Enter submit · Esc cancel",
+            "⠹ rotating tip",
+        ] {
+            let detection = detect_agent(Some(Agent::Keen), &format!("{prose}{footer}"));
+            assert_eq!(detection.state, AgentState::Idle);
+        }
+        for hint in [
+            "↑/↓ navigate · Enter select · Esc cancel",
+            "Enter submit · Esc cancel",
+        ] {
+            // Six legal options put the header beyond bottom_non_empty_lines(16).
+            // Long wrapped questions/options must not change the live controls.
+            for wrapped in ["".to_string(), "wrapped question or option\n".repeat(20)] {
+                let screen = format!(
+                    "Question 1 of 1\nWhich option?\n{wrapped}› • One (recommended)\n  • Two\n  • Three\n  • Four\n  • Five\n  • Six\n  • Type your answer\n    {hint}\n─────────────────\n ⠹ rotating tip{busy}"
+                );
+                let detection = detect_agent(Some(Agent::Keen), &screen);
+                assert_eq!(detection.state, AgentState::Blocked);
+                assert!(detection.visible_blocker);
+            }
+            for tail in [footer, busy.as_str()] {
+                let prose =
+                    format!("The dialog says Question 1 of 1.\nIts help says {hint}.{tail}");
+                let detection = detect_agent(Some(Agent::Keen), &prose);
+                assert!(!detection.visible_blocker);
+                assert_ne!(detection.state, AgentState::Blocked);
+            }
+        }
+        for hint in [
+            "↑/↓ navigate · Enter select · Esc cancel",
+            "Enter submit · Esc cancel",
+        ] {
+            let prose =
+                format!("    The keyboard shortcuts are:\n    {hint}\n ⠹ rotating tip{busy}");
+            let detection = detect_agent(Some(Agent::Keen), &prose);
+            assert_eq!(detection.state, AgentState::Working);
+            assert!(!detection.visible_blocker);
+        }
+        let stale = format!(
+            "Question 1 of 1\nEnter submit · Esc cancel\n{}{footer}",
+            "ordinary transcript\n".repeat(20)
+        );
+        assert_eq!(detect_state(Some(Agent::Keen), &stale), AgentState::Idle);
+    }
+
     // ---- Agent identification ----
 
     #[test]
     fn identify_known_agents() {
         assert_eq!(identify_agent("pi"), Some(Agent::Pi));
+        assert_eq!(identify_agent("keen"), Some(Agent::Keen));
+        assert_eq!(identify_agent("keen.exe"), Some(Agent::Keen));
+        assert_eq!(identify_agent("keen-helper"), None);
         assert_eq!(identify_agent("claude"), Some(Agent::Claude));
         assert_eq!(identify_agent("claude-code"), Some(Agent::Claude));
         assert_eq!(identify_agent("codex"), Some(Agent::Codex));
@@ -997,6 +1095,7 @@ mod tests {
     fn every_agent_has_a_canonical_interactive_executable() {
         let expected = [
             (Agent::Pi, "pi"),
+            (Agent::Keen, "keen"),
             (Agent::Claude, "claude"),
             (Agent::Codex, "codex"),
             (Agent::Gemini, "gemini"),
@@ -1515,6 +1614,24 @@ Enter to select · Esc to cancel"#;
             identify_agent_in_job(&job),
             Some((Agent::Claude, "claude".to_string()))
         );
+    }
+
+    #[test]
+    fn identify_agent_in_job_detects_native_and_shell_wrapped_keen() {
+        for (name, argv) in [
+            ("keen", vec!["/opt/keen-code/bin/keen"]),
+            ("keen.exe", vec![r"C:\tools\keen.exe"]),
+            ("sh", vec!["/bin/sh", "/usr/local/bin/keen"]),
+        ] {
+            let job = crate::platform::ForegroundJob {
+                process_group_id: 123,
+                processes: vec![foreground_process(123, name, &argv)],
+            };
+            assert_eq!(
+                identify_agent_in_job(&job).map(|(agent, _)| agent),
+                Some(Agent::Keen)
+            );
+        }
     }
 
     #[test]

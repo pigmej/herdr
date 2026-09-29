@@ -1,0 +1,49 @@
+id = "keen"
+version = "2026.09.27.1"
+min_engine_version = 1
+updated_at = "2026-09-27T00:00:00Z"
+
+# Stock Keen Code 0.57.0, captured through agent read --source detection.
+# Live controls sit above the persistent input/status footer. Transcript text,
+# rotating tips, provider/model names and question contents are not evidence.
+[[rules]]
+id = "permission_controls"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(16)"
+visible_blocker = true
+contains = ["Enter confirm", "Esc deny", "Ask what to do instead"]
+regex = ['▶ (?:Allow|Deny|Ask what to do instead)']
+
+[[rules]]
+id = "question_controls"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(16)"
+visible_blocker = true
+# Header/options can scroll above this region. Require the fixed help directly
+# followed by the card's closing border; prose mentioning shortcuts is not a card.
+regex = ['(?m)^[ \t]*(?:↑/↓ navigate · Enter select · Esc cancel|Enter submit · Esc cancel)[ \t]*\n[ \t]*─{3,}[ \t]*$']
+line_regex = ['^ ▶ ']
+all = [{ regex = ['(?m)^  [^\n]* • ⏱ [0-9]+:[0-9]{2}(?::[0-9]{2})? • [^\n]*\s*\z'] }]
+
+[[rules]]
+id = "response_timer"
+state = "working"
+priority = 500
+region = "bottom_non_empty_lines(5)"
+visible_working = true
+line_regex = ['^ ▶ ']
+contains = ["───"]
+# Only the final status line owns the timer; input/cwd may contain its text.
+regex = ['(?m)^  [^\n]* • ⏱ [0-9]+:[0-9]{2}(?::[0-9]{2})? • [^\n]*\s*\z']
+
+[[rules]]
+id = "input_prompt"
+state = "idle"
+priority = 100
+region = "bottom_non_empty_lines(5)"
+visible_idle = true
+line_regex = ['^ ▶ ']
+contains = ["───"]
+not = [{ regex = ['(?m)^  [^\n]* • ⏱ [0-9]+:[0-9]{2}(?::[0-9]{2})? • [^\n]*\s*\z'] }]

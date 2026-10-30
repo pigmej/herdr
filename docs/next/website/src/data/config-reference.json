@@ -1182,17 +1182,6 @@
           ]
         },
         {
-          "key": "ui.sound.agents.keen",
-          "type": "enum",
-          "default": "\"default\"",
-          "description": "Sound override for detected Keen Code agents.",
-          "values": [
-            "default",
-            "on",
-            "off"
-          ]
-        },
-        {
           "key": "ui.sound.agents.claude",
           "type": "enum",
           "default": "\"default\"",
